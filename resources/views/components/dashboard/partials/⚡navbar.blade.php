@@ -16,7 +16,7 @@ new class extends Component {
         $Userinfo = session('hoyolab_user_info', []);
         $this->user['name'] = $Userinfo['nickname'];
         $this->user['avatar'] = $Userinfo['avatar'];
-        $this->user['hoyolab_id'] = $Userinfo['uid'];
+        $this->user['hoyolab_id'] = $Userinfo['hoyolab_uid'];
     }
 };
 ?>

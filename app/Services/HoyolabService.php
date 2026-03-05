@@ -32,7 +32,7 @@ class HoyolabService
 
             if (isset($data['message']) && $data['message'] === 'OK') {
                 $userInfo = [
-                    'uid' => $data['data']['user_info']['uid'] ?? null,
+                    'hoyolab_uid' => $data['data']['user_info']['uid'] ?? null,
                     'nickname' => $data['data']['user_info']['nickname'] ?? null,
                     'avatar'=>$data['data']['user_info']['avatar_url'] ?? 'https://ui-avatars.com/api/?name=Commander&background=2563eb&color=fff',
                 ];

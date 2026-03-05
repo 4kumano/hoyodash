@@ -15,6 +15,7 @@ new #[Layout('layouts.dashboard')] class extends Component {
         $genshinService = app(GenshinService::class);
         try {
             $data = $genshinService->getGenshinGameRecordCard($cookie);
+            // dd($data);
 
             if (isset($data['retcode']) && $data['retcode'] !== 0) {
                 $this->errorMessage = $data['message'] ?? 'Gagal mengambil data dari server HoYoLAB.';
@@ -129,7 +130,7 @@ new #[Layout('layouts.dashboard')] class extends Component {
                     <!-- Main Stats from Card Array -->
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
                         @if(empty($statsData))
-                            <p class="text-slate-500 col-span-4 text-center py-4">Data battle chronicle kosong.</p>
+                            <p class="text-slate-500 col-span-4 text-center py-4">Data Summary.</p>
                         @endif
                         @foreach($statsData as $stat)
                             <div

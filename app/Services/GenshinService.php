@@ -24,7 +24,7 @@ class GenshinService
         }
 
         $userInfo = $this->hoyolabService->getUserFullInfo($cookie);
-        $uid = $userInfo['uid'] ?? null;
+        $uid = $userInfo['hoyolab_uid'] ?? null;
 
         if (!$uid) {
             return ['retcode' => -1, 'message' => 'Gagal mengambil UID Hoyolab (getUserFullInfo).'];
