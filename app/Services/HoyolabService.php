@@ -1,0 +1,232 @@
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+
+class HoyolabService
+{
+    protected string $baseUrl = 'https://api-os-takumi.hoyoverse.com';
+
+    // Game Specific API Routes (Base URL for Announcements, Events, etc)
+    const HK4E_URL = 'https://sg-hk4e-api.hoyoverse.com/common/hk4e_global/'; // Genshin Impact
+    const NAP_URL  = 'https://sg-announcement-static.hoyoverse.com/common/nap_global/'; // Zenless Zone Zero (ZZZ)
+    const HKRPG_URL = 'https://sg-hkrpg-api.hoyoverse.com/common/hkrpg_global/'; // Honkai: Star Rail
+
+    /**
+     * Validate the cookie and get the user's game roles.
+     * Required cookies: ltoken_v2, ltuid_v2 (or ltoken, ltuid)
+     */
+    public function loginWithCookie(string $cookie): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'Host' => 'api-account-os.hoyolab.com',
+                'Accept' => 'application/json, text/plain, */*',
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Encoding' => 'gzip, deflate, br',
+                'Connection' => 'keep-alive',
+                'Cookie' => $cookie,
+            ])->get('https://api-account-os.hoyolab.com/binding/api/getUserGameRolesByCookie');
+
+            $data = $response->json();
+
+            if (!is_array($data)) {
+                return [
+                    'retcode' => -1,
+                    // If it's returning HTML, just show generic error.
+                    'message' => 'Layanan HoYoLAB sedang tidak dapat diakses atau Cookie Anda ditolak oleh server (Status: ' . $response->status() . ').',
+                ];
+            }
+
+            return $data;
+        } catch (\Exception $e) {
+            return [
+                'retcode' => -1,
+                'message' => 'Connection error: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Recognizes which server a UID is from.
+     * 
+     * @param int|string $uid
+     * @return string
+     * @throws \Exception
+     */
+    public function recognizeServer($uid): string
+    {
+        $uidStr = (string) $uid;
+        $firstDigit = $uidStr[0] ?? '';
+
+        $servers = [
+            "1" => "cn_gf01",
+            "2" => "cn_gf01",
+            "5" => "cn_qd01",
+            "6" => "os_usa",
+            "7" => "os_euro",
+            "8" => "os_asia",
+            "9" => "os_cht",
+        ];
+
+        if (array_key_exists($firstDigit, $servers)) {
+            return $servers[$firstDigit];
+        }
+
+        throw new \Exception("AccountNotFound: UID {$uid} isn't associated with any server");
+    }
+
+    /**
+     * Attempts to recognize what item type an id is
+     * 
+     * @param int $id
+     * @return string|null
+     */
+    public function recognizeId(int $id): ?string
+    {
+        if ($id > 10000000 && $id < 20000000) {
+            return "character";
+        } elseif ($id > 1000000 && $id < 10000000) {
+            return "artifact_set";
+        } elseif ($id > 100000 && $id < 1000000) {
+            return "outfit";
+        } elseif ($id > 50000 && $id < 100000) {
+            return "artifact";
+        } elseif ($id > 10000 && $id < 50000) {
+            return "weapon";
+        } elseif ($id > 100 && $id < 1000) {
+            return "constellation";
+        } elseif ($id > 100000000000000000 && $id < 1000000000000000000) {
+            return "transaction";
+        } elseif ($id >= 1 && $id <= 4) {
+            return "exploration";
+        }
+
+        return null;
+    }
+
+    /**
+     * Recognizes whether the uid is a game uid.
+     * 
+     * @param int|string $uid
+     * @return bool
+     */
+    public function isGameUid($uid): bool
+    {
+        return (bool) preg_match('/^[6789]\d{8}$/', (string) $uid);
+    }
+
+    /**
+     * Gets the official game icon URL based on game code.
+     * 
+     * @param string $gameBiz
+     * @return string
+     */
+    public function getIcon(string $gameBiz): string
+    {
+        if (str_contains($gameBiz, 'hk4e')) {
+            return 'https://img-os-static.hoyolab.com/communityWeb/upload/1d7dd8f33c5ccdfdeac86e1e86ddd652.png'; // Genshin
+        } elseif (str_contains($gameBiz, 'hkrpg')) {
+            return 'https://img-os-static.hoyolab.com/communityWeb/upload/473afd1250b71ba470744aa240f6d638.png'; // Honkai: Starrail
+        } elseif (str_contains($gameBiz, 'bh3')) {
+            return 'https://img-os-static.hoyolab.com/communityWeb/upload/bbb364aaa7d51d168c96aaa6a1939cba.png'; // Honkai Impact 3rd
+        } elseif (str_contains($gameBiz, 'nap')) {
+            return 'https://img-os-static.hoyolab.com/communityWeb/upload/30ef8803324044b40ccbc69973da9848.png'; // ZZZ
+        }
+        
+        // Default placeholder icon jika tidak ada kecocokan
+        return 'https://ui-avatars.com/api/?name=Game&background=1e293b&color=fff';
+    }
+
+    /**
+     * Gets the latest news/announcements for a specific game code.
+     * 
+     * @param string $gameBiz
+     * @param string|int $uid
+     * @param string $region
+     * @param int $level
+     * @param string $lang
+     * @return array
+     */
+    public function getNews(string $gameBiz, $uid = 0, string $region = '', int $level = 1, string $lang = 'id-id'): array
+    {
+        $url = '';
+        $params = [
+            'game_biz' => $gameBiz,
+            'bundle_id' => $gameBiz,
+            'platform' => 'pc',
+            'region' => $region,
+            'uid' => $uid,
+            'level' => $level,
+            'lang' => $lang,
+        ];
+
+        if (str_contains($gameBiz, 'hk4e')) {
+            $params['game'] = 'hk4e';
+            $url = self::HK4E_URL . 'announcement/api/getAnnList';
+        } elseif (str_contains($gameBiz, 'nap')) {
+            $params['game'] = 'nap';
+            $url = self::NAP_URL . 'announcement/api/getAnnList';
+        } elseif (str_contains($gameBiz, 'hkrpg')) {
+            $params['game'] = 'hkrpg';
+            $params['channel_id'] = 1;
+            $url = self::HKRPG_URL . 'announcement/api/getAnnList';
+        } else {
+            return []; // Unrecognized game config
+        }
+
+        try {
+            $response = Http::get($url, $params);
+            $data = $response->json();
+            
+            $newsList = [];
+            
+            // Format struktur respon getAnnList dari Hoyoverse
+            if (isset($data['data']['list']) && is_array($data['data']['list'])) {
+                foreach ($data['data']['list'] as $item) {
+                    // Cek apakah data dibungkus kategori (mengandung array 'list' di dalamnya)
+                    if (isset($item['list']) && is_array($item['list'])) {
+                        $tag = $item['type_label'] ?? 'Berita';
+                        // Tentukan warna tag berdasar nama kategori
+                        $tagColor = str_contains(strtolower($tag), 'event') ? 'text-purple-400' : 'text-blue-400';
+                        $bg = str_contains(strtolower($tag), 'event') ? 'from-purple-900/40' : 'from-blue-900/40';
+
+                        foreach ($item['list'] as $ann) {
+                            $newsList[] = [
+                                'game' => $gameBiz,
+                                'tag'  => $tag,
+                                'tag_color' => $tagColor,
+                                'time' => isset($ann['start_time']) ? \Carbon\Carbon::parse($ann['start_time'])->diffForHumans() : 'Baru saja',
+                                'title' => $ann['title'] ?? 'Tanpa Judul',
+                                'desc' => $ann['subtitle'] ?? 'Baca selengkapnya di dalam game.',
+                                'banner' => $ann['banner'] ?? '',
+                                'bg' => $bg,
+                            ];
+                        }
+                    } else {
+                        // Data langsung berupa array of announcements (tanpa kategori)
+                        $contentStripped = strip_tags($item['content'] ?? '');
+                        // Gunakan subtitle, jika kosong ambil potongan text dari content
+                        $desc = !empty($item['subtitle']) ? $item['subtitle'] : ($contentStripped ? substr($contentStripped, 0, 100) . '...' : 'Baca selengkapnya di dalam game.');
+
+                        $newsList[] = [
+                            'game' => $gameBiz,
+                            'tag'  => 'Berita',
+                            'tag_color' => 'text-emerald-400',
+                            'time' => 'Baru saja', // Struktur ini kebetulan tak punya start_time di sample
+                            'title' => $item['title'] ?? 'Tanpa Judul',
+                            'desc' => $desc,
+                            'banner' => $item['banner'] ?? '',
+                            'bg' => 'from-emerald-900/40',
+                        ];
+                    }
+                }
+            }
+            return $newsList;
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+}
