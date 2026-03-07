@@ -12,7 +12,7 @@
     @livewireStyles
 </head>
 
-<body>
+<body class="bg-[#0b0f19]">
     {{ $slot }}
 
     <x-toast />

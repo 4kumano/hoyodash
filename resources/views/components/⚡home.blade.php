@@ -220,11 +220,16 @@ new #[Layout('layouts.app')] #[Title('Home - Hoyo Dashboard')] class extends Com
         </div>
         <div class="border-t border-slate-800/50 mt-10 pt-10 text-center flex flex-col items-center">
             <div class="flex items-center gap-2 mb-4">
-                <svg class="w-6 h-6 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
-                    <path
-                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-5l5 2.5-5 2.5z" />
+                <svg class="w-6 h-6 drop-shadow-[0_0_8px_rgba(45,212,191,0.5)] shrink-0" viewBox="0 0 24 24" fill="none"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"
+                        class="fill-teal-500/20 stroke-teal-500" stroke-width="1.5" stroke-linejoin="round" />
+                    <path d="M12 6L13.5 10.5L18 12L13.5 13.5L12 18L10.5 13.5L6 12L10.5 10.5L12 6Z"
+                        class="fill-teal-400" />
+                    <circle cx="12" cy="12" r="1.5" class="fill-white" />
                 </svg>
-                <span class="text-lg font-bold text-white tracking-wide">HoyoDash</span>
+                <span
+                    class="text-lg font-bold bg-gradient-to-r from-teal-400 to-blue-500 bg-clip-text text-transparent tracking-wide">HoyoDash</span>
             </div>
             <p class="text-slate-500 text-sm max-w-lg">
                 HoyoDash is an unofficial dashboard. Not affiliated with, endorsed by, or in any way officially
