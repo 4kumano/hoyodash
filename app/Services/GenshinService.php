@@ -297,6 +297,69 @@ class GenshinService
     }
 
     /**
+     * Get Daily Check-In rewards from Hoyolab API.
+     * Returns month, awards list, and whether user has already checked in today.
+     */
+    public function getDailyCheckIn(?string $cookie): array
+    {
+        if (empty($cookie)) {
+            return ['retcode' => -1, 'message' => 'Cookie tidak valid.'];
+        }
+
+        $headers = [
+            'Cookie' => $cookie,
+            'x-rpc-lang' => 'en-us',
+            'x-rpc-language' => 'en-us',
+            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        ];
+
+        try {
+            $response = Http::withHeaders($headers)
+                ->get('https://sg-hk4e-api.hoyolab.com/event/sol/home', [
+                    'lang' => 'en-us',
+                    'act_id' => 'e202102251931481',
+                ]);
+
+            $data = $response->json();
+
+            if (isset($data['message']) && $data['message'] === 'OK') {
+                $apiData = $data['data'] ?? [];
+                $month = $apiData['month'] ?? now()->month;
+                $awards = $apiData['awards'] ?? [];
+                $resign = $apiData['resign'] ?? false;
+                $nowEpoch = $apiData['now'] ?? time();
+
+                // Derive current day from epoch timestamp
+                $todayDay = (int) date('j', (int) $nowEpoch);
+                $todayIndex = $todayDay - 1;
+
+                $todayReward = $awards[$todayIndex] ?? null;
+
+                return [
+                    'retcode' => 0,
+                    'message' => 'OK',
+                    'month' => $month,
+                    'awards' => $awards,
+                    'is_checked_in' => $resign,
+                    'today_day' => $todayDay,
+                    'today_reward' => $todayReward,
+                ];
+            }
+
+            return [
+                'retcode' => $data['retcode'] ?? -1,
+                'message' => $data['message'] ?? 'Terjadi kesalahan dari API Hoyolab.',
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'retcode' => -1,
+                'message' => 'Terjadi kesalahan koneksi: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
      * Map Property Icons
      */
     public function IconStats(array $propertyMap): array

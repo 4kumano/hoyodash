@@ -14,6 +14,7 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
     ];
     public $games = [];
     public $news = [];
+    public $dailyCheckIn = [];
 
     public $builds = [['name' => 'Acheron', 'game' => 'Honkai: Star Rail', 'tier' => 'T0', 'role' => 'Main DPS', 'path' => 'Nihility', 'bg' => 'bg-purple-950/50'], ['name' => 'Arlecchino', 'game' => 'Genshin Impact', 'tier' => 'T0', 'role' => 'Main DPS', 'path' => 'Pyro', 'bg' => 'bg-red-950/50'], ['name' => 'Ellen Joe', 'game' => 'Zenless Zone Zero', 'tier' => 'S', 'role' => 'Attack', 'path' => 'Ice', 'bg' => 'bg-blue-950/50']];
 
@@ -115,6 +116,12 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                         $game['daily_task_finished'] = $noteData['daily_task']['finished_num'] ?? 0;
                         $game['daily_task_total'] = $noteData['daily_task']['total_num'] ?? 4;
                     }
+                }
+
+                // Fetch Daily Check-In data
+                $checkIn = $genshinService->getDailyCheckIn($cookie);
+                if (isset($checkIn['retcode']) && $checkIn['retcode'] === 0) {
+                    $this->dailyCheckIn = $checkIn;
                 }
             }
         }
@@ -285,6 +292,92 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
             @endforeach
         </div>
     </section>
+
+    <!-- Daily Check-In Section -->
+    @if (!empty($dailyCheckIn) && !empty($dailyCheckIn['today_reward']))
+        <section name="daily-checkin">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-white flex items-center">
+                    <svg class="w-6 h-6 mr-2 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd"
+                            d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
+                            clip-rule="evenodd"></path>
+                    </svg>
+                    Daily Check-In
+                </h2>
+                <span class="text-sm text-slate-400 font-medium">
+                    {{ date('F', mktime(0, 0, 0, $dailyCheckIn['month'], 1)) }} · Day {{ $dailyCheckIn['today_day'] }}
+                </span>
+            </div>
+
+            <div class="bg-gradient-to-br from-[#1e293b]/70 to-[#0f172a]/90 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                {{-- Decorative glow --}}
+                <div class="absolute -top-16 -right-16 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div class="absolute -bottom-10 -left-10 w-40 h-40 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                <div class="relative z-10 flex flex-col sm:flex-row items-center gap-6">
+                    {{-- Today's Reward Card --}}
+                    <div class="flex flex-col items-center gap-3 min-w-[140px]">
+                        <div class="relative">
+                            <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30 flex items-center justify-center p-3 shadow-lg shadow-amber-900/20">
+                                <img src="{{ $dailyCheckIn['today_reward']['icon'] }}"
+                                    alt="{{ $dailyCheckIn['today_reward']['name'] }}"
+                                    class="w-full h-full object-contain drop-shadow-[0_2px_8px_rgba(245,158,11,0.3)]" loading="lazy">
+                            </div>
+                            <span class="absolute -top-2 -right-2 px-2 py-0.5 bg-amber-500 text-[10px] font-bold text-black rounded-full shadow-md">
+                                x{{ $dailyCheckIn['today_reward']['cnt'] }}
+                            </span>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-white font-semibold text-sm">{{ $dailyCheckIn['today_reward']['name'] }}</p>
+                            <p class="text-slate-400 text-xs mt-0.5">Today's Reward</p>
+                        </div>
+                    </div>
+
+                    {{-- Divider --}}
+                    <div class="hidden sm:block w-px h-28 bg-gradient-to-b from-transparent via-slate-600/50 to-transparent"></div>
+                    <div class="block sm:hidden w-full h-px bg-gradient-to-r from-transparent via-slate-600/50 to-transparent"></div>
+
+                    {{-- Status & Action --}}
+                    <div class="flex-1 flex flex-col items-center sm:items-start gap-4">
+                        @if ($dailyCheckIn['is_checked_in'])
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
+                                    <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p class="text-emerald-400 font-bold text-lg">Claimed!</p>
+                                    <p class="text-slate-400 text-xs">You've already checked in today. Come back tomorrow!</p>
+                                </div>
+                            </div>
+                        @else
+                            <div>
+                                <p class="text-white font-bold text-lg">Ready to Check In!</p>
+                                <p class="text-slate-400 text-sm mt-1">Claim your daily reward before the server resets.</p>
+                            </div>
+                            <button type="button"
+                                class="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold rounded-xl shadow-lg shadow-amber-900/30 hover:shadow-amber-500/40 transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                Check In Now
+                            </button>
+                        @endif
+
+                        {{-- Progress hint --}}
+                        <div class="flex items-center gap-2 text-xs text-slate-500">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span>Day {{ $dailyCheckIn['today_day'] }} of {{ count($dailyCheckIn['awards']) }} this month</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    @endif
 
     <!-- Bottom Sections Grid: Builds & News -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
