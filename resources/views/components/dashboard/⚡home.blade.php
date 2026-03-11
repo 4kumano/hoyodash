@@ -644,8 +644,9 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
             x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0"
             style="display: none;" x-data="{
                 redeemingCode: null,
+                redeemedCodes: [],
                 async redeemCode(code, storageKey) {
-                    if (this.redeemingCode) return;
+                    if (this.redeemingCode || this.redeemedCodes.includes(code)) return;
                     this.redeemingCode = code;
             
                     try {
@@ -662,15 +663,8 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                             data[storageKey] = existing.join(',');
                             localStorage.setItem('Redeem', JSON.stringify(data));
             
-                            // Hide the card
-                            this.$refs['code_' + code]?.remove();
-                            this.$nextTick(() => {
-                                document.querySelectorAll('[data-game-group]').forEach(group => {
-                                    if (group.querySelectorAll('[data-code-card]').length === 0) {
-                                        group.remove();
-                                    }
-                                });
-                            });
+                            // Mark as redeemed in UI so the button turns green & disabled
+                            this.redeemedCodes.push(code);
                         } else if (result.status === 'cooldown') {
                             $dispatch('notify', { type: 'warning', message: result.description });
                         } else {
@@ -719,7 +713,7 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                         {{-- Code Cards --}}
                         <div class="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             @foreach ($gameData['codes'] as $codeEntry)
-                                <div x-ref="code_{{ $codeEntry['code'] }}" data-code-card
+                                <div data-code-card
                                     class="bg-[#0b0f19]/60 border border-slate-700/40 rounded-xl p-4 flex flex-col gap-3 hover:border-slate-500/50 transition-all group">
                                     {{-- Code --}}
                                     <div class="flex items-center justify-between gap-2">
@@ -750,8 +744,9 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                                     {{-- Redeem Button --}}
                                     <button type="button"
                                         @click="redeemCode('{{ $codeEntry['code'] }}', '{{ $gameData['storage_key'] }}')"
-                                        :disabled="redeemingCode === '{{ $codeEntry['code'] }}'"
-                                        class="w-full mt-auto py-2 bg-gradient-to-r {{ $gameData['color'] }} hover:opacity-90 text-white text-xs font-bold rounded-lg transition-all active:scale-95 flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        :disabled="redeemingCode === '{{ $codeEntry['code'] }}' || redeemedCodes.includes('{{ $codeEntry['code'] }}')"
+                                        :class="redeemedCodes.includes('{{ $codeEntry['code'] }}') ? 'bg-green-600 border border-green-500 text-white' : 'bg-gradient-to-r {{ $gameData['color'] }} border border-transparent'"
+                                        class="w-full mt-auto py-2 hover:opacity-90 text-white text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
                                         <template x-if="redeemingCode === '{{ $codeEntry['code'] }}'">
                                             <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                                                 <circle class="opacity-25" cx="12" cy="12" r="10"
@@ -761,7 +756,14 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                                                 </path>
                                             </svg>
                                         </template>
-                                        <template x-if="redeemingCode !== '{{ $codeEntry['code'] }}'">
+                                        <template x-if="redeemingCode !== '{{ $codeEntry['code'] }}' && !redeemedCodes.includes('{{ $codeEntry['code'] }}')">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                                                viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M5 13l4 4L19 7"></path>
+                                            </svg>
+                                        </template>
+                                        <template x-if="redeemedCodes.includes('{{ $codeEntry['code'] }}')">
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
                                                 viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -769,7 +771,7 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                                             </svg>
                                         </template>
                                         <span
-                                            x-text="redeemingCode === '{{ $codeEntry['code'] }}' ? 'Redeeming...' : 'Redeem'"></span>
+                                            x-text="redeemedCodes.includes('{{ $codeEntry['code'] }}') ? 'Berhasil' : (redeemingCode === '{{ $codeEntry['code'] }}' ? 'Redeeming...' : 'Redeem')"></span>
                                     </button>
                                 </div>
                             @endforeach

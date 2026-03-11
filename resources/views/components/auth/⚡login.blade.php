@@ -227,6 +227,7 @@ new #[Layout('layouts.app')] #[Title('Login - Hoyo Dashboard')] class extends Co
                                 <span>ltoken_v2=XXXX;</span>
                                 <span>ltuid_v2=XXXX;</span>
                                 <span>_HYVUUID=XXXX;</span>
+                                <span>_MHYUUID=XXXX;</span>
                             </div>
                         </li>
                     </ol>

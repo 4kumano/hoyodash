@@ -351,12 +351,15 @@ class HoyolabService
     /**
      * Redeem a cdkey code for any Hoyoverse game via the official API.
      *
+     * Genshin: GET to webExchangeCdkey
+     * HSR/ZZZ: POST to webExchangeCdkeyRisk (with device_uuid from _MHYUUID cookie)
+     *
      * @param string|null $cookie    User's HoYoLAB cookie string
      * @param string      $uid       Game UID
-     * @param string      $region    Game region/server (e.g. os_asia, prod_official_asia)
+     * @param string      $region    Game region/server
      * @param string      $cdkey     The redeem code
-     * @param string      $gameCode  Game code for the API URL (hk4e, hkrpg, nap)
-     * @param string      $gameBiz   Game business code (hk4e_global, hkrpg_global, nap_global)
+     * @param string      $gameCode  Game code (hk4e, hkrpg, nap)
+     * @param string      $gameBiz   Game biz code (hk4e_global, hkrpg_global, nap_global)
      * @return array{retcode: int, message: string, status: string, description: string}
      */
     public function redeemCode(?string $cookie, string $uid, string $region, string $cdkey, string $gameCode, string $gameBiz): array
@@ -370,20 +373,85 @@ class HoyolabService
             ];
         }
 
-        $apiUrl = "https://public-operation-{$gameCode}.hoyoverse.com/common/apicdkey/api/webExchangeCdkey";
+        // Game-specific configuration
+        $gameConfigs = [
+            'hk4e' => [
+                'origin' => 'https://genshin.hoyoverse.com',
+                'referer' => 'https://genshin.hoyoverse.com/',
+                'endpoint' => 'webExchangeCdkey',
+                'method' => 'GET',
+            ],
+            'hkrpg' => [
+                'origin' => 'https://hsr.hoyoverse.com',
+                'referer' => 'https://hsr.hoyoverse.com/',
+                'endpoint' => 'webExchangeCdkeyRisk',
+                'method' => 'POST',
+            ],
+            'nap' => [
+                'origin' => 'https://zenless.hoyoverse.com',
+                'referer' => 'https://zenless.hoyoverse.com/',
+                'endpoint' => 'webExchangeCdkeyRisk',
+                'method' => 'POST',
+            ],
+        ];
+
+        $config = $gameConfigs[$gameCode] ?? $gameConfigs['hk4e'];
+        $apiUrl = "https://public-operation-{$gameCode}.hoyoverse.com/common/apicdkey/api/{$config['endpoint']}";
+
+        // Ensure cookie string is clean (no newlines/carriage returns from textarea)
+        $cleanCookie = preg_replace('/\\r|\\n/', '', trim($cookie));
+
+        // CRITICAL FIX: The Hoyoverse webExchangeCdkey API rejects a raw _v2 cookie string 
+        // with -1071 (Please log in first) unless the account_id_v2, account_mid_v2, and 
+        // cookie_token_v2 are explicitly appended again at the end with a specific spacing format. 
+        // This replicates how Postman sends it when it merges its internal cookie jar.
+        $accId = $this->extractCookieValue($cleanCookie, 'account_id_v2');
+        $accMid = $this->extractCookieValue($cleanCookie, 'account_mid_v2');
+        $cookieToken = $this->extractCookieValue($cleanCookie, 'cookie_token_v2');
+        
+        if ($accId && $cookieToken) {
+            $duplicateSuffix = "; account_id_v2={$accId}; account_mid_v2={$accMid}; cookie_token_v2={$cookieToken}";
+            $cleanCookie .= $duplicateSuffix;
+        }
+
+        $headers = [
+            'Cookie' => $cleanCookie,
+            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept' => 'application/json, text/plain, */*',
+            'Accept-Encoding' => 'gzip, deflate, br',
+            'Accept-Language' => 'en-US,en;q=0.9,id;q=0.8',
+            'Connection' => 'keep-alive',
+            'Origin' => $config['origin'],
+            'Referer' => $config['referer'],
+        ];
 
         try {
-            $response = Http::withHeaders([
-                'Cookie' => $cookie,
-                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            ])->get($apiUrl, [
-                'uid' => $uid,
-                'region' => $region,
-                'lang' => 'id',
-                'cdkey' => $cdkey,
-                'game_biz' => $gameBiz,
-                'sLangKey' => 'en-us',
-            ]);
+            if ($config['method'] === 'GET') {
+                // Genshin Impact — GET with query params
+                $response = Http::withHeaders($headers)->get($apiUrl, [
+                    'uid' => $uid,
+                    'region' => $region,
+                    'lang' => 'id',
+                    'cdkey' => $cdkey,
+                    'game_biz' => $gameBiz,
+                    'sLangKey' => 'en-us',
+                ]);
+            } else {
+                // HSR / ZZZ — POST with JSON payload
+                $deviceUuid = $this->extractCookieValue($cleanCookie, '_MHYUUID')
+                    ?: (string) \Illuminate\Support\Str::uuid();
+
+                $response = Http::withHeaders($headers)->post($apiUrl, [
+                    't' => (int) (microtime(true) * 1000),
+                    'lang' => 'id',
+                    'game_biz' => $gameBiz,
+                    'uid' => $uid,
+                    'region' => $region,
+                    'cdkey' => $cdkey,
+                    'platform' => '4',
+                    'device_uuid' => $deviceUuid,
+                ]);
+            }
 
             $data = $response->json();
             $retcode = $data['retcode'] ?? -1;
@@ -406,5 +474,23 @@ class HoyolabService
                 'description' => 'Gagal terhubung ke server Hoyoverse.',
             ];
         }
+    }
+
+    /**
+     * Extract a specific cookie value from a cookie string.
+     *
+     * @param string $cookieString  e.g. "ltoken_v2=xxx; _MHYUUID=abc-123; ..."
+     * @param string $name          Cookie name to extract
+     * @return string|null
+     */
+    private function extractCookieValue(string $cookieString, string $name): ?string
+    {
+        foreach (explode(';', $cookieString) as $part) {
+            $segments = explode('=', trim($part), 2);
+            if (count($segments) === 2 && trim($segments[0]) === $name) {
+                return trim($segments[1]);
+            }
+        }
+        return null;
     }
 }
