@@ -163,7 +163,7 @@ new #[Layout('layouts.dashboard')] #[Title('Genshin Impact Stats')] class extend
                 </div>
             </div>
         @else
-            <div x-data="{ activeTab: 'dailynote' }" class="space-y-6">
+            <div x-data="{ activeTab: new URLSearchParams(window.location.search).get('tab') || 'dailynote' }" class="space-y-6">
                 <!-- Navigation Tabs -->
                 <div class="flex space-x-2 border-b border-slate-700/50 pb-2 overflow-x-auto hide-scrollbar">
                     <button @click="activeTab = 'dailynote'"

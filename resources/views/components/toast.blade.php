@@ -2,15 +2,17 @@
         show: false,
         message: '',
         type: 'success',
+        queue: [],
+        processing: false,
         init() {
             @if (session()->has('success'))
-                this.showNotification('{{ session('success') }}', 'success');
+                this.pushNotification('{{ session('success') }}', 'success');
             @elseif (session()->has('error'))
-                this.showNotification('{{ session('error') }}', 'error');
+                this.pushNotification('{{ session('error') }}', 'error');
             @elseif (session()->has('warning'))
-                this.showNotification('{{ session('warning') }}', 'warning');
+                this.pushNotification('{{ session('warning') }}', 'warning');
             @elseif (session()->has('info'))
-                this.showNotification('{{ session('info') }}', 'info');
+                this.pushNotification('{{ session('info') }}', 'info');
             @endif
 
             window.addEventListener('notify', (event) => {
@@ -18,15 +20,30 @@
                 if (Array.isArray(detail) && detail.length > 0) {
                     detail = detail[0];
                 }
-                this.showNotification(detail.message || detail, detail.type || 'success');
+                this.pushNotification(detail.message || detail, detail.type || 'success');
             });
         },
-        showNotification(message, type) {
-            this.message = message;
-            this.type = type;
+        pushNotification(message, type) {
+            this.queue.push({ message, type });
+            if (!this.processing) {
+                this.processQueue();
+            }
+        },
+        processQueue() {
+            if (this.queue.length === 0) {
+                this.processing = false;
+                return;
+            }
+            this.processing = true;
+            const next = this.queue.shift();
+            this.message = next.message;
+            this.type = next.type;
             this.show = true;
             setTimeout(() => {
                 this.show = false;
+                setTimeout(() => {
+                    this.processQueue();
+                }, 350);
             }, 3000);
         }
     }" x-show="show" x-transition:enter="transition ease-out duration-300"

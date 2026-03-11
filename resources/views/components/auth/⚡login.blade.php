@@ -41,7 +41,6 @@ new #[Layout('layouts.app')] #[Title('Login - Hoyo Dashboard')] class extends Co
 
             $this->isLogin = true;
 
-
             session(['isLogin' => $this->isLogin]);
             session(['hoyolab_accounts' => $accounts]);
 
@@ -57,21 +56,19 @@ new #[Layout('layouts.app')] #[Title('Login - Hoyo Dashboard')] class extends Co
             $this->dispatch('cookie-validated', [
                 'cookie' => $this->cookieVal,
                 'userInfo' => $this->userInfo,
-                'isLogin' => $this->isLogin
+                'isLogin' => $this->isLogin,
             ]);
 
             $this->dispatch('notify', [
                 'type' => 'success',
-                'message' => 'Cookie berhasil di validasi.'
+                'message' => 'Cookie berhasil di validasi.',
             ]);
-
-
         } else {
             $this->errorMessage = $response['message'] ?? 'Cookie tidak valid atau sesi telah kedaluwarsa.';
             $this->dispatch('cookie-invalid');
             $this->dispatch('notify', [
                 'type' => 'error',
-                'message' => 'Cookie tidak valid atau sesi telah kedaluwarsa.'
+                'message' => 'Cookie tidak valid atau sesi telah kedaluwarsa.',
             ]);
         }
     }
@@ -141,8 +138,7 @@ new #[Layout('layouts.app')] #[Title('Login - Hoyo Dashboard')] class extends Co
                 <div class="mb-5">
                     <label class="block text-sm font-medium text-slate-300 mb-2" for="cookie">HoYoLAB Account
                         Cookie</label>
-                    <textarea id="cookie" wire:model="cookieVal" rows="4"
-                        placeholder="Paste ltoken, ltuid, dll di sini..."
+                    <textarea id="cookie" wire:model="cookieVal" rows="4" placeholder="Paste ltoken, ltuid, dll di sini..."
                         class="w-full bg-[#0b0f19]/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all resize-none"></textarea>
 
                     @if ($errorMessage)
@@ -157,7 +153,8 @@ new #[Layout('layouts.app')] #[Title('Login - Hoyo Dashboard')] class extends Co
                     <span wire:loading class="flex justify-items-center">
                         <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg"
                             fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                stroke-width="4">
                             </circle>
                             <path class="opacity-75" fill="currentColor"
                                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
@@ -229,6 +226,7 @@ new #[Layout('layouts.app')] #[Title('Login - Hoyo Dashboard')] class extends Co
                                 <span>ltmid_v2=XXXX;</span>
                                 <span>ltoken_v2=XXXX;</span>
                                 <span>ltuid_v2=XXXX;</span>
+                                <span>_HYVUUID=XXXX;</span>
                             </div>
                         </li>
                     </ol>
@@ -240,8 +238,8 @@ new #[Layout('layouts.app')] #[Title('Login - Hoyo Dashboard')] class extends Co
                                 d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
                         <span>
-                            Contoh gabungan akhir: <code
-                                class="text-slate-500">ltoken_v2=v2...; ltuid_v2=80...; cookie_token_v2=v2...;</code>
+                            Contoh gabungan akhir: <code class="text-slate-500">ltoken_v2=v2...; ltuid_v2=80...;
+                                cookie_token_v2=v2...;</code>
                             (harus berisi parameter tersebut secara lengkap agar bisa mengambil data yang valid).
                         </span>
                     </div>
@@ -252,34 +250,34 @@ new #[Layout('layouts.app')] #[Title('Login - Hoyo Dashboard')] class extends Co
 </div>
 
 @script
-<script>
-    $wire.on('cookie-validated', (data) => {
-        // Pada Livewire 3 beda dengan v2, data params dibungkus dalam array
-        let payload = Array.isArray(data) ? data[0] : data;
+    <script>
+        $wire.on('cookie-validated', (data) => {
+            // Pada Livewire 3 beda dengan v2, data params dibungkus dalam array
+            let payload = Array.isArray(data) ? data[0] : data;
 
-        let cookieVal = payload.cookie || '';
-        let userInfo = payload.userInfo || null;
-        let isLogin = payload.isLogin || false;
+            let cookieVal = payload.cookie || '';
+            let userInfo = payload.userInfo || null;
+            let isLogin = payload.isLogin || false;
 
-        // Simpan ke local storage user 
-        if (cookieVal) {
-            localStorage.setItem('hoyolab_cookie', cookieVal);
-            if (userInfo) {
-                localStorage.setItem('hoyolab_user_info', JSON.stringify(userInfo));
+            // Simpan ke local storage user 
+            if (cookieVal) {
+                localStorage.setItem('hoyolab_cookie', cookieVal);
+                if (userInfo) {
+                    localStorage.setItem('hoyolab_user_info', JSON.stringify(userInfo));
+                }
             }
-        }
 
-        if (isLogin) {
-            localStorage.setItem('isLogin', isLogin);
-        }
+            if (isLogin) {
+                localStorage.setItem('isLogin', isLogin);
+            }
 
-        // Redirect ke dashboard
-        window.location.href = '{{ route('dashboard.home') }}';
-    });
+            // Redirect ke dashboard
+            window.location.href = '{{ route('dashboard.home') }}';
+        });
 
-    // Hapus cookie bila kedaluwarsa atau invalid
-    $wire.on('cookie-invalid', () => {
-        localStorage.removeItem('hoyolab_cookie');
-    });
-</script>
+        // Hapus cookie bila kedaluwarsa atau invalid
+        $wire.on('cookie-invalid', () => {
+            localStorage.removeItem('hoyolab_cookie');
+        });
+    </script>
 @endscript

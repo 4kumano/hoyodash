@@ -93,7 +93,7 @@ new #[Layout('layouts.dashboard')] #[Title('Genshin Impact Character Detail')] c
 
                 <!-- Navigation Back -->
                 <div class="absolute top-6 left-6 md:top-8 md:left-8 z-20">
-                    <a livewire:navigate href="{{ route('dashboard.game.genshin', ['uid' => $uid]) }}"
+                    <a livewire:navigate href="{{ route('dashboard.game.genshin', ['uid' => $uid]) }}?tab=mychara"
                         class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-slate-800/80 text-slate-300 border border-slate-700 hover:text-white hover:bg-slate-700 hover:border-slate-500 transition-all shadow-lg backdrop-blur-md">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -108,12 +108,12 @@ new #[Layout('layouts.dashboard')] #[Title('Genshin Impact Character Detail')] c
                     <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
                         <div
                             class="relative w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 rounded-2xl bg-slate-800 border-2 border-slate-700 shadow-2xl overflow-hidden shrink-0 filter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">
-                            <img src="{{ $characterData['base']['icon'] ?? '' }}"
-                                alt="{{ $characterData['base']['name'] ?? '' }}" class="w-full h-full object-cover">
                             <!-- Rarity Background Gradient based on standard Genshin colors -->
                             <div
-                                class="absolute inset-0 bg-gradient-to-t @if (($characterData['base']['rarity'] ?? 4) == 5) from-yellow-600/60 @else from-purple-600/60 @endif mix-blend-overlay">
+                                class="absolute inset-0 bg-gradient-to-t @if (($characterData['base']['rarity'] ?? 4) == 5) from-yellow-600/60 via-yellow-900/20 @else from-purple-600/60 via-purple-900/20 @endif to-transparent">
                             </div>
+                            <img src="{{ $characterData['base']['icon'] ?? '' }}"
+                                alt="{{ $characterData['base']['name'] ?? '' }}" class="w-full h-full object-cover relative z-10">
                         </div>
                         <div>
                             <div class="flex items-center gap-3 mb-2 flex-wrap">

@@ -98,6 +98,8 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
 
     public function loadData($cookie)
     {
+        set_time_limit(120);
+
         $genshinService = app(\App\Services\GenshinService::class);
         $mappedGames = $this->games;
 
@@ -116,8 +118,8 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                         $hours = floor($recoveryTime / 3600);
                         $minutes = floor(($recoveryTime % 3600) / 60);
                         $game['recovery_formatted'] = "{$hours}h {$minutes}m";
-                    } else if ($recoveryTime == 0) {
-                        $game['recovery_formatted'] = "Fully capped";
+                    } elseif ($recoveryTime == 0) {
+                        $game['recovery_formatted'] = 'Fully capped';
                     }
 
                     if (isset($noteData['daily_task'])) {
@@ -143,6 +145,8 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
      */
     public function loadRedeemCodes(string $redeemedJson = '{}')
     {
+        set_time_limit(120);
+
         $hoyolabService = app(\App\Services\HoyolabService::class);
         $gameRadarService = app(\App\Services\GameRadarService::class);
 
@@ -218,12 +222,74 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
 
         $this->redeemCodes = $allCodes;
     }
+
+    /**
+     * Redeem a single code via the Hoyoverse cdkey API.
+     *
+     * @param string $code The redeem code (cdkey)
+     * @return array{retcode: int, message: string, status: string, description: string}
+     */
+    public function redeemSingleCode(string $code, string $storageKey): array
+    {
+        $cookie = session('hoyolab_cookie');
+        if (empty($cookie)) {
+            return [
+                'retcode' => -1,
+                'message' => 'Cookie tidak ditemukan.',
+                'status' => 'credentials_error',
+                'description' => 'Silakan login ulang.',
+            ];
+        }
+
+        // Map storage key to game configuration
+        $gameConfig = [
+            'genshinimpact' => ['biz_prefix' => 'hk4e', 'game_code' => 'hk4e', 'game_biz' => 'hk4e_global'],
+            'honkaistarrail' => ['biz_prefix' => 'hkrpg', 'game_code' => 'hkrpg', 'game_biz' => 'hkrpg_global'],
+            'zenlesszonezero' => ['biz_prefix' => 'nap', 'game_code' => 'nap', 'game_biz' => 'nap_global'],
+        ];
+
+        $config = $gameConfig[$storageKey] ?? null;
+        if (!$config) {
+            return [
+                'retcode' => -1,
+                'message' => 'Game tidak dikenali.',
+                'status' => 'invalid',
+                'description' => 'Redeem code belum didukung untuk game ini.',
+            ];
+        }
+
+        // Find matching game account from session
+        $accounts = session('hoyolab_accounts', []);
+        $gameUid = null;
+        $gameRegion = null;
+        foreach ($accounts as $acc) {
+            if (str_contains($acc['game_biz'] ?? '', $config['biz_prefix'])) {
+                $gameUid = $acc['game_uid'] ?? null;
+                $gameRegion = $acc['region'] ?? null;
+                break;
+            }
+        }
+
+        if (empty($gameUid) || empty($gameRegion)) {
+            return [
+                'retcode' => -1,
+                'message' => 'Akun game tidak ditemukan.',
+                'status' => 'credentials_error',
+                'description' => 'Tidak ada akun yang terhubung untuk game ini.',
+            ];
+        }
+
+        $hoyolabService = app(\App\Services\HoyolabService::class);
+        return $hoyolabService->redeemCode($cookie, $gameUid, $gameRegion, $code, $config['game_code'], $config['game_biz']);
+    }
 };
 ?>
 
 
 <!-- Main Body -->
 <div class="flex-1 overflow-y-auto p-5 md:p-8 lg:p-10 space-y-10" x-data="{
+    gamesLoaded: false,
+    codesLoaded: false,
     init() {
         let cookie = localStorage.getItem('hoyolab_cookie');
         let isLogin = localStorage.getItem('isLogin');
@@ -232,12 +298,23 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
             return;
         }
 
-        // Trigger data load sending local storage purely to Backend Livewire
-        $wire.loadData(cookie);
+        // Notify: fetching game data
+        $dispatch('notify', { type: 'info', message: 'Sedang Mengambil data Live Game Status...' });
+
+        $wire.loadData(cookie).then(() => {
+            this.gamesLoaded = true;
+            $dispatch('notify', { type: 'success', message: 'Sukses Mendapatkan data \'Live Game Status\'' });
+        });
 
         // Load redeem codes, passing already-redeemed from localStorage
         let redeemed = localStorage.getItem('Redeem') || '{}';
-        $wire.loadRedeemCodes(redeemed);
+
+        $dispatch('notify', { type: 'info', message: 'Sedang Mengambil data Redeem Codes...' });
+
+        $wire.loadRedeemCodes(redeemed).then(() => {
+            this.codesLoaded = true;
+            $dispatch('notify', { type: 'success', message: 'Sukses Mendapatkan data \'Redeem Codes\'' });
+        });
     }
 }">
 
@@ -300,12 +377,65 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
     <section name="games">
         <div class="flex items-center justify-between mb-6">
             <h2 class="text-2xl font-bold text-white">Live Game Status</h2>
-            <a href="#" class="text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors">Manage
-                Games
-                &rarr;</a>
+            <div class="flex items-center gap-3">
+                <span x-show="!gamesLoaded" x-transition
+                    class="flex items-center gap-2 text-xs text-blue-400 font-medium">
+                    <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                            stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                        </path>
+                    </svg>
+                    Memuat data...
+                </span>
+                <a href="#" class="text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors">Manage
+                    Games
+                    &rarr;</a>
+            </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {{-- Skeleton Loading --}}
+        <div x-show="!gamesLoaded" x-transition:leave="transition ease-in duration-300"
+            x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            @for ($i = 0; $i < min(count($games), 3); $i++)
+                <div class="bg-[#1e293b]/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6 animate-pulse">
+                    <div class="flex items-center space-x-3 mb-4">
+                        <div class="w-10 h-10 rounded-xl bg-slate-700"></div>
+                        <div class="flex-1">
+                            <div class="h-4 bg-slate-700 rounded w-3/4 mb-2"></div>
+                            <div class="h-3 bg-slate-700/60 rounded w-1/2"></div>
+                        </div>
+                        <div class="w-3 h-3 rounded-full bg-slate-700"></div>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between mb-1.5">
+                                <div class="h-3 bg-slate-700 rounded w-24"></div>
+                                <div class="h-3 bg-slate-700 rounded w-16"></div>
+                            </div>
+                            <div class="w-full bg-slate-800 rounded-full h-2.5">
+                                <div class="bg-slate-700 h-2.5 rounded-full w-2/3"></div>
+                            </div>
+                            <div class="h-3 bg-slate-700/40 rounded w-36 mt-2"></div>
+                        </div>
+                        <div class="bg-slate-800/50 rounded-lg p-3 flex justify-between items-center">
+                            <div class="flex items-center gap-2">
+                                <div class="w-4 h-4 bg-slate-700 rounded"></div>
+                                <div class="h-3 bg-slate-700 rounded w-20"></div>
+                            </div>
+                            <div class="h-3 bg-slate-700 rounded w-10"></div>
+                        </div>
+                    </div>
+                </div>
+            @endfor
+        </div>
+
+        {{-- Actual Game Cards --}}
+        <div x-show="gamesLoaded" x-transition:enter="transition ease-out duration-500"
+            x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0"
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" style="display: none;">
             @foreach ($games as $game)
                 <div
                     class="bg-[#1e293b]/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6 hover:border-slate-500/50 transition-all shadow-lg hover:shadow-xl group relative overflow-hidden">
@@ -377,7 +507,7 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                                 class="text-sm font-bold text-white">{{ $game['daily_task_finished'] !== '?' ? $game['daily_task_finished'] : '-' }}
                                 <span class="text-slate-500">/
                                     {{ $game['daily_task_total'] !== '?' ? $game['daily_task_total'] : '-' }}</span>
-                                @if(($game['daily_task_finished'] ?? 0) === ($game['daily_task_total'] ?? 4) && $game['daily_task_finished'] !== '?')
+                                @if (($game['daily_task_finished'] ?? 0) === ($game['daily_task_total'] ?? 4) && $game['daily_task_finished'] !== '?')
                                     <span class="text-green-400 ml-1">✓</span>
                                 @endif
                             </span>
@@ -388,47 +518,59 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                             @php $checkin = $game['daily_checkin']; @endphp
                             <div class="mt-1 pt-4 border-t border-slate-700/40">
                                 <div class="flex items-center justify-between mb-3">
-                                    <span class="text-xs font-semibold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <span
+                                        class="text-xs font-semibold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                                         <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"></path>
+                                            <path fill-rule="evenodd"
+                                                d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
+                                                clip-rule="evenodd"></path>
                                         </svg>
                                         Daily Check-In
                                     </span>
-                                    <span class="text-[10px] text-slate-500 font-medium">Day {{ $checkin['today_day'] }}/{{ count($checkin['awards']) }}</span>
+                                    <span class="text-[10px] text-slate-500 font-medium">Day
+                                        {{ $checkin['today_day'] }}/{{ count($checkin['awards']) }}</span>
                                 </div>
 
                                 <div class="flex items-center gap-3 bg-slate-800/50 rounded-xl p-3">
                                     {{-- Reward icon --}}
                                     <div class="relative shrink-0">
-                                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30 flex items-center justify-center p-1.5">
+                                        <div
+                                            class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30 flex items-center justify-center p-1.5">
                                             <img src="{{ $checkin['today_reward']['icon'] }}"
                                                 alt="{{ $checkin['today_reward']['name'] }}"
                                                 class="w-full h-full object-contain" loading="lazy">
                                         </div>
-                                        <span class="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 bg-amber-500 text-[8px] font-bold text-black rounded-full leading-none">
+                                        <span
+                                            class="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 bg-amber-500 text-[8px] font-bold text-black rounded-full leading-none">
                                             x{{ $checkin['today_reward']['cnt'] }}
                                         </span>
                                     </div>
 
                                     {{-- Info --}}
                                     <div class="flex-1 min-w-0">
-                                        <p class="text-sm font-semibold text-white truncate">{{ $checkin['today_reward']['name'] }}</p>
+                                        <p class="text-sm font-semibold text-white truncate">
+                                            {{ $checkin['today_reward']['name'] }}</p>
                                         <p class="text-[10px] text-slate-400 mt-0.5">Today's Reward</p>
                                     </div>
 
                                     {{-- Action / Status --}}
                                     @if ($checkin['is_checked_in'])
-                                        <span class="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-emerald-500/15 text-emerald-400 text-xs font-bold rounded-lg border border-emerald-500/25">
-                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                                        <span
+                                            class="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-emerald-500/15 text-emerald-400 text-xs font-bold rounded-lg border border-emerald-500/25">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                                                viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round"
+                                                    stroke-width="2.5" d="M5 13l4 4L19 7"></path>
                                             </svg>
                                             Claimed
                                         </span>
                                     @else
                                         <button type="button"
                                             class="shrink-0 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black text-xs font-bold rounded-lg shadow-md shadow-amber-900/20 hover:shadow-amber-500/30 transition-all active:scale-95 flex items-center gap-1">
-                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                                                viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M5 13l4 4L19 7"></path>
                                             </svg>
                                             Check In
                                         </button>
@@ -444,38 +586,110 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
 
 
     <!-- Redeem Codes Section -->
+
+    {{-- Skeleton Loading for Redeem Codes --}}
+    <section x-show="!codesLoaded" x-transition:leave="transition ease-in duration-300"
+        x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+                <svg class="w-6 h-6 mr-2 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z">
+                    </path>
+                </svg>
+                Redeem Codes
+            </h2>
+            <span class="flex items-center gap-2 text-xs text-blue-400 font-medium">
+                <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                        stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                    </path>
+                </svg>
+                Memuat data...
+            </span>
+        </div>
+        <div class="space-y-6">
+            @for ($i = 0; $i < 2; $i++)
+                <div
+                    class="bg-[#1e293b]/40 backdrop-blur-sm border border-slate-700/50 rounded-2xl overflow-hidden animate-pulse">
+                    {{-- Skeleton Header --}}
+                    <div class="flex items-center gap-3 px-5 py-3.5 border-b border-slate-700/40">
+                        <div class="w-8 h-8 rounded-lg bg-slate-700"></div>
+                        <div class="h-4 bg-slate-700 rounded w-32"></div>
+                        <div class="ml-auto h-5 bg-slate-700/60 rounded-full w-16"></div>
+                    </div>
+                    {{-- Skeleton Cards --}}
+                    <div class="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        @for ($j = 0; $j < 3; $j++)
+                            <div class="bg-[#0b0f19]/60 border border-slate-700/40 rounded-xl p-4 flex flex-col gap-3">
+                                <div class="flex items-center justify-between">
+                                    <div class="h-5 bg-slate-700 rounded w-28"></div>
+                                    <div class="w-7 h-7 bg-slate-700/50 rounded-lg"></div>
+                                </div>
+                                <div class="h-3 bg-slate-700/40 rounded w-full"></div>
+                                <div class="h-8 bg-slate-700/50 rounded-lg w-full mt-auto"></div>
+                            </div>
+                        @endfor
+                    </div>
+                </div>
+            @endfor
+        </div>
+    </section>
+
+    {{-- Actual Redeem Codes --}}
     @if (!empty($redeemCodes))
-        <section name="redeem-codes" x-data="{
-            redeemCode(code, storageKey) {
-                // Read existing redeemed data
-                let data = {};
-                try { data = JSON.parse(localStorage.getItem('Redeem') || '{}'); } catch(e) { data = {}; }
-
-                // Add code to the game's redeemed list
-                let existing = data[storageKey] ? data[storageKey].split(',').map(c => c.trim()) : [];
-                if (!existing.includes(code)) {
-                    existing.push(code);
-                }
-                data[storageKey] = existing.join(',');
-                localStorage.setItem('Redeem', JSON.stringify(data));
-
-                // Hide the card via Alpine
-                this.$refs['code_' + code]?.remove();
-
-                // Check if game group is now empty
-                this.$nextTick(() => {
-                    document.querySelectorAll('[data-game-group]').forEach(group => {
-                        if (group.querySelectorAll('[data-code-card]').length === 0) {
-                            group.remove();
+        <section name="redeem-codes" x-show="codesLoaded" x-transition:enter="transition ease-out duration-500"
+            x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0"
+            style="display: none;" x-data="{
+                redeemingCode: null,
+                async redeemCode(code, storageKey) {
+                    if (this.redeemingCode) return;
+                    this.redeemingCode = code;
+            
+                    try {
+                        const result = await $wire.redeemSingleCode(code, storageKey);
+            
+                        if (result.status === 'valid') {
+                            $dispatch('notify', { type: 'success', message: result.description });
+            
+                            // Save to localStorage
+                            let data = {};
+                            try { data = JSON.parse(localStorage.getItem('Redeem') || '{}'); } catch (e) { data = {}; }
+                            let existing = data[storageKey] ? data[storageKey].split(',').map(c => c.trim()) : [];
+                            if (!existing.includes(code)) existing.push(code);
+                            data[storageKey] = existing.join(',');
+                            localStorage.setItem('Redeem', JSON.stringify(data));
+            
+                            // Hide the card
+                            this.$refs['code_' + code]?.remove();
+                            this.$nextTick(() => {
+                                document.querySelectorAll('[data-game-group]').forEach(group => {
+                                    if (group.querySelectorAll('[data-code-card]').length === 0) {
+                                        group.remove();
+                                    }
+                                });
+                            });
+                        } else if (result.status === 'cooldown') {
+                            $dispatch('notify', { type: 'warning', message: result.description });
+                        } else {
+                            $dispatch('notify', { type: 'error', message: result.description || result.message });
                         }
-                    });
-                });
-            }
-        }">
+                    } catch (e) {
+                        $dispatch('notify', { type: 'error', message: 'Gagal menghubungi server.' });
+                    } finally {
+                        this.redeemingCode = null;
+                    }
+                }
+            }">
             <div class="flex items-center justify-between mb-6">
                 <h2 class="text-2xl font-bold text-white flex items-center">
-                    <svg class="w-6 h-6 mr-2 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"></path>
+                    <svg class="w-6 h-6 mr-2 text-amber-400" fill="none" stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z">
+                        </path>
                     </svg>
                     Redeem Codes
                 </h2>
@@ -486,14 +700,20 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
 
             <div class="space-y-6">
                 @foreach ($redeemCodes as $gameName => $gameData)
-                    <div data-game-group class="bg-[#1e293b]/40 backdrop-blur-sm border border-slate-700/50 rounded-2xl overflow-hidden">
+                    <div data-game-group
+                        class="bg-[#1e293b]/40 backdrop-blur-sm border border-slate-700/50 rounded-2xl overflow-hidden">
                         {{-- Game Header --}}
-                        <div class="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r {{ $gameData['color'] }}/30 border-b border-slate-700/40">
-                            <div class="w-8 h-8 rounded-lg bg-gradient-to-br {{ $gameData['color'] }} flex items-center justify-center p-0.5 shadow-sm overflow-hidden">
-                                <img src="{{ $gameData['icon_url'] }}" alt="{{ $gameName }}" class="w-full h-full object-cover rounded-[6px]" loading="lazy">
+                        <div
+                            class="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r {{ $gameData['color'] }}/30 border-b border-slate-700/40">
+                            <div
+                                class="w-8 h-8 rounded-lg bg-gradient-to-br {{ $gameData['color'] }} flex items-center justify-center p-0.5 shadow-sm overflow-hidden">
+                                <img src="{{ $gameData['icon_url'] }}" alt="{{ $gameName }}"
+                                    class="w-full h-full object-cover rounded-[6px]" loading="lazy">
                             </div>
                             <h3 class="font-bold text-white text-sm">{{ $gameName }}</h3>
-                            <span class="ml-auto text-xs bg-slate-800/60 text-slate-300 px-2.5 py-1 rounded-full font-medium">{{ count($gameData['codes']) }} codes</span>
+                            <span
+                                class="ml-auto text-xs bg-slate-800/60 text-slate-300 px-2.5 py-1 rounded-full font-medium">{{ count($gameData['codes']) }}
+                                codes</span>
                         </div>
 
                         {{-- Code Cards --}}
@@ -503,13 +723,17 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                                     class="bg-[#0b0f19]/60 border border-slate-700/40 rounded-xl p-4 flex flex-col gap-3 hover:border-slate-500/50 transition-all group">
                                     {{-- Code --}}
                                     <div class="flex items-center justify-between gap-2">
-                                        <code class="text-base font-bold text-white tracking-wider font-mono">{{ $codeEntry['code'] }}</code>
+                                        <code
+                                            class="text-base font-bold text-white tracking-wider font-mono">{{ $codeEntry['code'] }}</code>
                                         <button type="button"
                                             @click="navigator.clipboard.writeText('{{ $codeEntry['code'] }}'); $dispatch('notify', {type: 'success', message: 'Code copied!'})"
                                             class="shrink-0 p-1.5 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-white transition-colors"
                                             title="Copy code">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor"
+                                                viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z">
+                                                </path>
                                             </svg>
                                         </button>
                                     </div>
@@ -526,11 +750,26 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                                     {{-- Redeem Button --}}
                                     <button type="button"
                                         @click="redeemCode('{{ $codeEntry['code'] }}', '{{ $gameData['storage_key'] }}')"
-                                        class="w-full mt-auto py-2 bg-gradient-to-r {{ $gameData['color'] }} hover:opacity-90 text-white text-xs font-bold rounded-lg transition-all active:scale-95 flex items-center justify-center gap-1.5">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                        </svg>
-                                        Redeem
+                                        :disabled="redeemingCode === '{{ $codeEntry['code'] }}'"
+                                        class="w-full mt-auto py-2 bg-gradient-to-r {{ $gameData['color'] }} hover:opacity-90 text-white text-xs font-bold rounded-lg transition-all active:scale-95 flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <template x-if="redeemingCode === '{{ $codeEntry['code'] }}'">
+                                            <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10"
+                                                    stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor"
+                                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                                                </path>
+                                            </svg>
+                                        </template>
+                                        <template x-if="redeemingCode !== '{{ $codeEntry['code'] }}'">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                                                viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M5 13l4 4L19 7"></path>
+                                            </svg>
+                                        </template>
+                                        <span
+                                            x-text="redeemingCode === '{{ $codeEntry['code'] }}' ? 'Redeeming...' : 'Redeem'"></span>
                                     </button>
                                 </div>
                             @endforeach
@@ -561,7 +800,8 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                     <div
                         class="{{ $build['bg'] }} border border-slate-700/50 rounded-xl p-4 flex items-center justify-between hover:scale-[1.02] transition-transform cursor-pointer">
                         <div class="flex items-center space-x-4">
-                            <div class="w-12 h-12 bg-slate-800 rounded-lg shrink-0 border border-slate-600 shadow-inner">
+                            <div
+                                class="w-12 h-12 bg-slate-800 rounded-lg shrink-0 border border-slate-600 shadow-inner">
                             </div>
                             <div>
                                 <div class="flex items-center space-x-2">
@@ -598,7 +838,8 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                 @if (count($news) > 0)
                     @foreach ($news as $gameName => $gameNews)
                         <div class="border border-slate-700/50 rounded-xl overflow-hidden bg-[#1e293b]/30">
-                            <button @click="expanded = expanded === '{{ $gameName }}' ? null : '{{ $gameName }}'"
+                            <button
+                                @click="expanded = expanded === '{{ $gameName }}' ? null : '{{ $gameName }}'"
                                 class="w-full flex items-center justify-between p-4 bg-[#111827]/80 hover:bg-slate-700/30 transition-colors">
                                 <div class="flex items-center space-x-3">
                                     <span class="font-bold text-white">{{ $gameName }}</span>
@@ -606,9 +847,10 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                                         class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">{{ count($gameNews) }}</span>
                                 </div>
                                 <svg class="w-5 h-5 text-slate-400 transition-transform duration-200"
-                                    :class="expanded === '{{ $gameName }}' ? 'rotate-180 text-blue-400' : ''" fill="none"
-                                    stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
+                                    :class="expanded === '{{ $gameName }}' ? 'rotate-180 text-blue-400' : ''"
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7">
                                     </path>
                                 </svg>
                             </button>
@@ -639,7 +881,8 @@ new #[Layout('layouts.dashboard')] #[Title('Dashboard')] class extends Component
                                                     class="text-white font-bold text-base sm:text-lg mb-2 group-hover:text-blue-300 transition-colors leading-tight">
                                                     {{ $n['title'] }}
                                                 </h3>
-                                                <p class="text-xs sm:text-sm text-slate-400 line-clamp-2 leading-relaxed">
+                                                <p
+                                                    class="text-xs sm:text-sm text-slate-400 line-clamp-2 leading-relaxed">
                                                     {{ $n['desc'] }}
                                                 </p>
                                             </div>

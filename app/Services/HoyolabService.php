@@ -347,4 +347,64 @@ class HoyolabService
 
         return ['status' => 'unknown', 'description' => "Unknown retcode: {$retcode}"];
     }
+
+    /**
+     * Redeem a cdkey code for any Hoyoverse game via the official API.
+     *
+     * @param string|null $cookie    User's HoYoLAB cookie string
+     * @param string      $uid       Game UID
+     * @param string      $region    Game region/server (e.g. os_asia, prod_official_asia)
+     * @param string      $cdkey     The redeem code
+     * @param string      $gameCode  Game code for the API URL (hk4e, hkrpg, nap)
+     * @param string      $gameBiz   Game business code (hk4e_global, hkrpg_global, nap_global)
+     * @return array{retcode: int, message: string, status: string, description: string}
+     */
+    public function redeemCode(?string $cookie, string $uid, string $region, string $cdkey, string $gameCode, string $gameBiz): array
+    {
+        if (empty($cookie) || empty($uid) || empty($cdkey)) {
+            return [
+                'retcode' => -1,
+                'message' => 'Parameter tidak valid.',
+                'status' => 'invalid',
+                'description' => 'Cookie, UID, atau kode tidak boleh kosong.',
+            ];
+        }
+
+        $apiUrl = "https://public-operation-{$gameCode}.hoyoverse.com/common/apicdkey/api/webExchangeCdkey";
+
+        try {
+            $response = Http::withHeaders([
+                'Cookie' => $cookie,
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            ])->get($apiUrl, [
+                'uid' => $uid,
+                'region' => $region,
+                'lang' => 'id',
+                'cdkey' => $cdkey,
+                'game_biz' => $gameBiz,
+                'sLangKey' => 'en-us',
+            ]);
+
+            $data = $response->json();
+            $retcode = $data['retcode'] ?? -1;
+            $message = $data['message'] ?? 'Unknown error';
+
+            $validation = $this->validateRedeemResponse($retcode);
+
+            return [
+                'retcode' => $retcode,
+                'message' => $message,
+                'status' => $validation['status'],
+                'description' => $validation['description'],
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'retcode' => -1,
+                'message' => 'Terjadi kesalahan koneksi: ' . $e->getMessage(),
+                'status' => 'unknown',
+                'description' => 'Gagal terhubung ke server Hoyoverse.',
+            ];
+        }
+    }
 }
